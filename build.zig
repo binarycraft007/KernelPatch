@@ -3,22 +3,25 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const android = b.option(bool, "android", "build for android") orelse false;
+    const android = b.option(bool, "android", "build for android") orelse true;
 
     const kpimg = b.addExecutable(.{
         .name = "kpimg",
-        .root_source_file = .{ .path = "kernel/base/baselib.zig" },
+        .strip = false,
+        //.root_source_file = .{ .path = "kernel/base/baselib.zig" },
         .target = b.resolveTargetQuery(.{
             .os_tag = .freestanding,
             .cpu_arch = .aarch64,
             .abi = .none,
         }),
-        .optimize = optimize,
+        .optimize = .ReleaseFast,
     });
     kpimg.pie = false;
+    kpimg.want_lto = false;
+    kpimg.link_gc_sections = false;
+    kpimg.bundle_compiler_rt = false;
     kpimg.root_module.c_std = .C11;
-    kpimg.entry = .{ .symbol_name = "setup_entry" };
-    kpimg.link_gc_sections = true;
+    kpimg.entry = .{ .symbol_name = "_kp_start" };
     kpimg.setLinkerScript(.{ .path = "kernel/kpimg.lds" });
     kpimg.addCSourceFiles(.{
         .files = &kernel_src,
@@ -33,9 +36,6 @@ pub fn build(b: *std.Build) void {
             .files = &kernel_src_android,
             .flags = &.{},
         });
-    }
-    if (optimize == .Debug) {
-        kpimg.defineCMacro("DEBUG", null);
     }
     kpimg.addIncludePath(.{ .path = "kernel" });
     kpimg.addIncludePath(.{ .path = "kernel/linux" });
@@ -59,6 +59,14 @@ pub fn build(b: *std.Build) void {
     });
     tools.addIncludePath(.{ .path = "tools" });
     tools.addIncludePath(.{ .path = "kernel/include" });
+    tools.root_module.addImport("clap", b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("clap"));
+    tools.root_module.addImport("android", b.dependency("android", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("android"));
     tools.root_module.addAnonymousImport("kpimg", .{
         .root_source_file = kpimg.addObjCopy(.{ .format = .bin }).getOutput(),
     });
@@ -93,6 +101,7 @@ const kernel_src = [_][]const u8{
     "kernel/patch/common/extrainit.c",
     "kernel/patch/common/hotpatch.c",
     "kernel/patch/common/supercall.c",
+    "kernel/patch/common/pidmem.c",
     "kernel/patch/patch.c",
 };
 
